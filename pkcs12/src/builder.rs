@@ -68,6 +68,11 @@ pub enum Error {
     Asn1(der::Error),
     /// PBES2 encryption error.
     Encrypt(pkcs5::Error),
+    /// A required field was not set before calling
+    /// [`build_with_rng`][PfxBuilder::build_with_rng].
+    ///
+    /// The string names the missing field (e.g. `"cert"` or `"key"`).
+    MissingField(&'static str),
 }
 
 impl core::fmt::Display for Error {
@@ -75,6 +80,7 @@ impl core::fmt::Display for Error {
         match self {
             Self::Asn1(e) => write!(f, "ASN.1 error: {e}"),
             Self::Encrypt(e) => write!(f, "encryption error: {e}"),
+            Self::MissingField(name) => write!(f, "required field not set: {name}"),
         }
     }
 }
@@ -247,12 +253,8 @@ impl PfxBuilder {
     /// - encryption fails, or
     /// - the password contains characters outside the Unicode BMP.
     pub fn build_with_rng<R: CryptoRng>(self, rng: &mut R) -> Result<Vec<u8>, Error> {
-        let cert_der = self
-            .cert_der
-            .ok_or(der::Error::from(der::ErrorKind::Failed))?;
-        let key_der = self
-            .key_der
-            .ok_or(der::Error::from(der::ErrorKind::Failed))?;
+        let cert_der = self.cert_der.ok_or(Error::MissingField("cert"))?;
+        let key_der = self.key_der.ok_or(Error::MissingField("key"))?;
 
         // ── 1. Cert SafeContents ─────────────────────────────────────────────
         let mut cert_bags: SafeContents = Vec::new();
@@ -282,6 +284,10 @@ impl PfxBuilder {
         let cert_safe_contents_der = cert_bags.to_der()?;
 
         // ── 2. Encrypt cert bags → EncryptedData ContentInfo ─────────────────
+        // PBES2/PBKDF2 treats the password as an opaque byte string (RFC 8018
+        // §5.2), so we pass raw UTF-8 bytes.  The MAC path uses &str because
+        // the PKCS#12 §B.2 KDF requires UTF-16BE (BMP) encoding internally —
+        // see `compute_mac` and `kdf::derive_key_utf8`.
         let cert_ci = encrypt_safe_contents(
             rng,
             &cert_safe_contents_der,
@@ -290,6 +296,7 @@ impl PfxBuilder {
         )?;
 
         // ── 3. Key bag (pkcs8ShroudedKeyBag) ─────────────────────────────────
+        // Same UTF-8 bytes rationale as the cert encryption above.
         let epki_der = encrypt_key(rng, &key_der, self.password.as_bytes(), &self.key_enc_alg)?;
         let key_bag = SafeBag {
             bag_id: PKCS_12_PKCS8_KEY_BAG_OID,
@@ -325,6 +332,11 @@ impl PfxBuilder {
 
 /// Wrap `payload` in a CMS `id-data` ContentInfo:
 /// `ContentInfo { content_type: id-data, content: [0] OctetString(payload) }`.
+///
+/// `ContentInfo.content` is typed as [`Any`], which holds a raw TLV.  We must
+/// therefore build the complete OCTET STRING TLV (`to_der()`) first, then
+/// parse it back as `Any`.  Passing `payload` directly would lose the tag/length
+/// header and produce malformed DER.
 fn data_content_info(payload: &[u8]) -> Result<ContentInfo, Error> {
     let os_der = OctetString::new(payload)?.to_der()?;
     Ok(ContentInfo {
@@ -401,14 +413,25 @@ fn pbes2_encrypt<R: CryptoRng>(
 
 /// Encode a `pkcs5::EncryptionScheme` as an owned `AlgorithmIdentifier`.
 ///
-/// `EncryptionScheme` already encodes as an `AlgorithmIdentifier` SEQUENCE, so
-/// a DER round-trip is sufficient.
+/// The CMS `EncryptedContentInfo.content_enc_alg` field requires
+/// [`AlgorithmIdentifierOwned`] (from `spki`), but `pkcs5` only exposes
+/// [`pkcs5::EncryptionScheme`].  Because `EncryptionScheme` serialises
+/// identically to an `AlgorithmIdentifier` SEQUENCE, a DER round-trip is the
+/// least-surprising way to bridge the type gap.
+///
+/// The private-key path does *not* need this helper: `EncryptedPrivateKeyInfo`
+/// (from `pkcs8`) already accepts `EncryptionScheme` directly.
 fn scheme_to_alg_id(scheme: &pkcs5::EncryptionScheme) -> Result<AlgorithmIdentifierOwned, Error> {
     let der = scheme.to_der()?;
     Ok(AlgorithmIdentifierOwned::from_der(&der)?)
 }
 
 /// Compute PKCS#12 `MacData` using HMAC-SHA-256.
+///
+/// `password` is a `&str` (not `&[u8]`) because the PKCS#12 §B.2 KDF mandates
+/// BMP (UTF-16BE) encoding of the password, which [`derive_key_utf8`] performs
+/// internally.  Content-encryption (PBES2) uses raw UTF-8 bytes instead; see
+/// the call sites in [`PfxBuilder::build_with_rng`].
 fn compute_mac<R: CryptoRng>(
     password: &str,
     auth_safe_der: &[u8],
@@ -430,6 +453,8 @@ fn compute_mac<R: CryptoRng>(
             )?);
 
             // Compute HMAC-SHA-256 over the AuthenticatedSafe DER.
+            // `new_from_slice` only fails for a zero-length key; `mac_key` is
+            // `HMAC_SHA256_LEN` (32) bytes, so this error path is unreachable.
             let mut hmac = Hmac::<Sha256>::new_from_slice(&mac_key)
                 .map_err(|_| der::Error::from(der::ErrorKind::Failed))?;
             hmac.update(auth_safe_der);
