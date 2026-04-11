@@ -40,6 +40,8 @@ pub enum Pkcs12KeyType {
 /// `rounds` must be ≥ 1 (RFC 7292 Appendix C defines `iterations INTEGER (1..MAX)`).
 /// An error is returned if `rounds < 1`.
 ///
+/// The returned key is wrapped in [`Zeroizing`] and will be erased from memory when dropped.
+///
 /// ```rust
 /// let key = pkcs12::kdf::derive_key_utf8::<sha2::Sha256>("top-secret", &[0x1, 0x2, 0x3, 0x4],
 ///     pkcs12::kdf::Pkcs12KeyType::EncryptionKey, 1000, 32);
@@ -50,7 +52,7 @@ pub fn derive_key_utf8<D>(
     id: Pkcs12KeyType,
     rounds: i32,
     key_len: usize,
-) -> der::Result<Vec<u8>>
+) -> der::Result<Zeroizing<Vec<u8>>>
 where
     D: Digest + FixedOutputReset + BlockSizeUser,
 {
@@ -63,13 +65,15 @@ where
 ///
 /// `rounds` must be ≥ 1 (RFC 7292 Appendix C defines `iterations INTEGER (1..MAX)`).
 /// An error is returned if `rounds < 1`.
+///
+/// The returned key is wrapped in [`Zeroizing`] and will be erased from memory when dropped.
 pub fn derive_key_bmp<D>(
     password: BmpString,
     salt: &[u8],
     id: Pkcs12KeyType,
     rounds: i32,
     key_len: usize,
-) -> der::Result<Vec<u8>>
+) -> der::Result<Zeroizing<Vec<u8>>>
 where
     D: Digest + FixedOutputReset + BlockSizeUser,
 {
@@ -90,6 +94,8 @@ where
 /// `rounds` must be ≥ 1 (RFC 7292 Appendix C defines `iterations INTEGER (1..MAX)`).
 /// An error is returned if `rounds < 1`.
 ///
+/// The returned key is wrapped in [`Zeroizing`] and will be erased from memory when dropped.
+///
 /// ```rust
 /// let key = pkcs12::kdf::derive_key_utf8::<sha2::Sha256>("top-secret", &[0x1, 0x2, 0x3, 0x4],
 ///     pkcs12::kdf::Pkcs12KeyType::EncryptionKey, 1000, 32);
@@ -100,7 +106,7 @@ pub fn derive_key<D>(
     id: Pkcs12KeyType,
     rounds: i32,
     key_len: usize,
-) -> der::Result<Vec<u8>>
+) -> der::Result<Zeroizing<Vec<u8>>>
 where
     D: Digest + FixedOutputReset + BlockSizeUser,
 {
@@ -132,7 +138,10 @@ where
     let slen = block_size * salt.len().div_ceil(block_size);
     let plen = block_size * pass.len().div_ceil(block_size);
     let ilen = slen + plen;
-    let mut init_key = vec![0u8; ilen];
+    // Zeroizing ensures the S||P buffer (which contains password material) is
+    // wiped on drop, including on panic unwind.  The explicit init_key.zeroize()
+    // below is retained for eager zeroing at function exit.
+    let mut init_key = Zeroizing::new(vec![0u8; ilen]);
     // 2. Concatenate copies of the salt together to create a string S of
     //    length v(ceiling(s/v)) bits (the final copy of the salt may be
     //    truncated to create S).  Note that if the salt is the empty
@@ -154,7 +163,8 @@ where
 
     let mut m = key_len;
     let mut n = 0;
-    let mut out = vec![0u8; key_len];
+    // Zeroizing ensures key material in `out` is wiped when the caller drops it.
+    let mut out = Zeroizing::new(vec![0u8; key_len]);
     // 5. Set c=ceiling(n/u)
     // 6. For i=1, 2, ..., c, do the following:
     // [ Instead of following this approach, we use an infinite loop and
@@ -164,10 +174,15 @@ where
         //    H(H(H(... H(D||I))))
         <D as Update>::update(&mut digest, &id_block);
         <D as Update>::update(&mut digest, &init_key);
-        let mut result = digest.finalize_fixed_reset();
+        // Zeroizing ensures each intermediate hash value is wiped when replaced
+        // by the next iteration (via Drop on reassignment) and when the final
+        // value goes out of scope at the end of derive_key.
+        // `(*result)[..]`: Zeroizing<T> implements Deref but not Index,
+        // so the explicit deref is required to index into the wrapped Array.
+        let mut result = Zeroizing::new(digest.finalize_fixed_reset());
         for _ in 1..rounds {
-            <D as Update>::update(&mut digest, &result[0..output_size]);
-            result = digest.finalize_fixed_reset();
+            <D as Update>::update(&mut digest, &(*result)[0..output_size]);
+            result = Zeroizing::new(digest.finalize_fixed_reset());
         }
 
         // 7. Concateate A_1, A_2, ..., A_c together to form a pseudorandom
@@ -175,7 +190,7 @@ where
         // [ Instead of storing all Ais and concatenating later, we concatenate
         // them immediately ]
         let new_bytes_num = m.min(output_size);
-        out[n..n + new_bytes_num].copy_from_slice(&result[0..new_bytes_num]);
+        out[n..n + new_bytes_num].copy_from_slice(&(*result)[0..new_bytes_num]);
         n += new_bytes_num;
         if m <= new_bytes_num {
             break;
@@ -194,7 +209,7 @@ where
             let mut c = 1_u16;
             let mut k = block_size - 1;
             loop {
-                c += init_key[k + j] as u16 + result[k % output_size] as u16;
+                c += init_key[k + j] as u16 + (*result)[k % output_size] as u16;
                 init_key[j + k] = (c & 0x00ff) as u8;
                 c >>= 8;
                 if k == 0 {

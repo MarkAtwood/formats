@@ -1019,6 +1019,7 @@ dependencies = [
  "der",
  "digest",
  "hex-literal",
+ "hybrid-array",
  "pkcs5",
  "pkcs8",
  "sha2",
