@@ -1056,9 +1056,11 @@ dependencies = [
 name = "pkcs12"
 version = "0.2.0-pre.0"
 dependencies = [
+ "cbc",
  "cms",
  "const-oid",
  "der",
+ "des",
  "digest",
  "hex-literal",
  "hmac",
@@ -1066,6 +1068,7 @@ dependencies = [
  "pkcs8",
  "rand 0.10.0",
  "rand_core 0.10.0",
+ "sha1",
  "sha2",
  "spki",
  "whirlpool",

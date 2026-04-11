@@ -23,11 +23,14 @@ const-oid = { version = "0.10", features = ["db"], default-features = false }
 cms = { version = "=0.3.0-pre.2", default-features = false }
 
 # optional dependencies
+cbc       = { version = "0.2", optional = true, default-features = false, features = ["alloc", "block-padding"] }
+des       = { version = "0.9", optional = true, default-features = false }
 digest    = { version = "0.11", features = ["alloc"], optional = true }
 hmac      = { version = "0.13", optional = true }
 pkcs5     = { version = "0.8.0-rc.13", features = ["pbes2", "alloc"], optional = true }
 pkcs8     = { version = "0.11.0-rc.10", features = ["alloc", "pkcs5"], default-features = false, optional = true }
 rand_core = { version = "0.10", optional = true, default-features = false }
+sha1      = { version = "0.11", optional = true, default-features = false }
 sha2      = { version = "0.11", optional = true, default-features = false }
 zeroize   = { version = "1.8.1", optional = true, default-features = false }
 
@@ -42,6 +45,14 @@ whirlpool = "0.11"
 [features]
 default = ["pem"]
 builder = ["dep:hmac", "dep:pkcs5", "dep:pkcs8", "dep:rand_core", "dep:sha2", "kdf"]
+# `parser` supports PBES2 (AES) bag encryption and HMAC-SHA-1/SHA-256 MACs.
+# For legacy PFX files that use PKCS#12 PBE (3DES) bag encryption or
+# PBKDF2/HMAC-SHA1 key derivation, also enable `sha1-insecure`.
+parser = ["dep:cbc", "dep:des", "dep:hmac", "dep:pkcs5", "dep:pkcs8", "dep:sha1", "dep:sha2", "kdf"]
+# Enables HMAC-SHA1 as the PBKDF2 PRF (via pkcs5) for parsing PBES2-encrypted
+# bags that use the legacy SHA-1 PRF (common in older OpenSSL, Java, macOS).
+# Named to match the upstream pkcs5 feature so users can audit what they enable.
+sha1-insecure = ["parser", "pkcs5/sha1-insecure"]
 kdf = ["dep:digest", "zeroize/alloc"]
 pem = ["der/pem", "x509-cert/pem"]
 
