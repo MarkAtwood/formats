@@ -2,10 +2,7 @@
 
 use cms::encrypted_data::EncryptedData;
 use const_oid::db::rfc5911::{ID_DATA, ID_ENCRYPTED_DATA};
-use der::{
-    Decode, Encode,
-    asn1::{ContextSpecific, OctetString},
-};
+use der::{Decode, Encode, asn1::OctetString};
 use pkcs8::EncryptedPrivateKeyInfoRef;
 
 use pkcs12::{
@@ -84,8 +81,8 @@ fn builder_roundtrip() {
         let sb = cert_bags.first().unwrap();
         assert_eq!(PKCS_12_CERT_BAG_OID, sb.bag_id);
 
-        let cs: ContextSpecific<CertBag> = ContextSpecific::from_der(&sb.bag_value).unwrap();
-        assert_eq!(cert_der.as_slice(), cs.value.cert_value.as_bytes());
+        let cb = CertBag::from_der(&sb.bag_value).unwrap();
+        assert_eq!(cert_der.as_slice(), cb.cert_value.as_bytes());
     }
 
     // auth_safe[1]: Data ContentInfo containing the key bag
@@ -99,11 +96,9 @@ fn builder_roundtrip() {
         let sb = key_bags.first().unwrap();
         assert_eq!(PKCS_12_PKCS8_KEY_BAG_OID, sb.bag_id);
 
-        let cs: ContextSpecific<EncryptedPrivateKeyInfoRef<'_>> =
-            ContextSpecific::from_der(&sb.bag_value).unwrap();
-        let mut ciphertext = cs.value.encrypted_data.as_bytes().to_vec();
-        let plaintext = cs
-            .value
+        let epki = EncryptedPrivateKeyInfoRef::from_der(&sb.bag_value).unwrap();
+        let mut ciphertext = epki.encrypted_data.as_bytes().to_vec();
+        let plaintext = epki
             .encryption_algorithm
             .decrypt_in_place(PASSWORD, &mut ciphertext)
             .expect("key decryption should succeed");

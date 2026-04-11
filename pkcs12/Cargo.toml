@@ -26,6 +26,7 @@ cms = { version = "=0.3.0-pre.2", default-features = false }
 digest    = { version = "0.11", features = ["alloc"], optional = true }
 hmac      = { version = "0.13", optional = true }
 pkcs5     = { version = "0.8.0-rc.13", features = ["pbes2", "alloc"], optional = true }
+pkcs8     = { version = "0.11.0-rc.10", features = ["alloc", "pkcs5"], default-features = false, optional = true }
 rand_core = { version = "0.10", optional = true, default-features = false }
 sha2      = { version = "0.11", optional = true, default-features = false }
 zeroize   = { version = "1.8.1", optional = true, default-features = false }
@@ -40,7 +41,7 @@ whirlpool = "0.11"
 
 [features]
 default = ["pem"]
-builder = ["dep:hmac", "dep:pkcs5", "dep:rand_core", "dep:sha2", "kdf"]
+builder = ["dep:hmac", "dep:pkcs5", "dep:pkcs8", "dep:rand_core", "dep:sha2", "kdf"]
 kdf = ["dep:digest", "zeroize/alloc"]
 pem = ["der/pem", "x509-cert/pem"]
 

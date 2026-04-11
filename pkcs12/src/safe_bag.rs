@@ -2,8 +2,8 @@
 
 use alloc::vec::Vec;
 use const_oid::ObjectIdentifier;
-use der::asn1::OctetString;
-use der::{AnyRef, Decode, Enumerated, Sequence};
+use der::asn1::{ContextSpecific, OctetString};
+use der::{AnyRef, Decode, Encode, Enumerated, Sequence, TagNumber};
 use spki::AlgorithmIdentifierOwned;
 use x509_cert::attr::Attributes;
 
@@ -44,10 +44,12 @@ impl<'a> ::der::DecodeValue<'a> for SafeBag {
         _header: ::der::Header,
     ) -> ::der::Result<Self> {
         let bag_id = reader.decode()?;
-        let bag_value = match reader.tlv_bytes() {
-            Ok(v) => v.to_vec(),
-            Err(e) => return Err(e),
-        };
+        // Decode [0] EXPLICIT wrapper; store only the inner bytes so that
+        // encode_value can add the [0] wrapper back without double-wrapping.
+        let bag_value = ContextSpecific::<AnyRef<'_>>::decode_explicit(reader, TagNumber(0))?
+            .ok_or_else(|| der::Error::from(der::ErrorKind::TagNumberInvalid))?
+            .value
+            .to_der()?;
         let bag_attributes = reader.decode()?;
         Ok(Self {
             bag_id,

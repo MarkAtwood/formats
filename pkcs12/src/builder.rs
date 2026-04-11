@@ -36,11 +36,12 @@ use sha2::Sha256;
 use spki::AlgorithmIdentifierOwned;
 use zeroize::Zeroizing;
 
+use pkcs8::EncryptedPrivateKeyInfoOwned;
+
 use crate::{
     CertBag, DigestInfo, MacData, PKCS_12_CERT_BAG_OID, PKCS_12_PKCS8_KEY_BAG_OID,
     PKCS_12_X509_CERT_OID, SafeBag,
     kdf::{Pkcs12KeyType, derive_key_utf8},
-    pbe_params::EncryptedPrivateKeyInfo as LocalEpki,
     pfx::{Pfx, Version},
     safe_bag::SafeContents,
 };
@@ -341,9 +342,8 @@ fn encrypt_key<R: CryptoRng>(
     alg: &EncryptionAlgorithm,
 ) -> Result<Vec<u8>, Error> {
     let (params, ciphertext) = pbes2_encrypt(rng, plaintext, password, alg)?;
-    let alg_id = scheme_to_alg_id(&pkcs5::EncryptionScheme::from(params))?;
-    let epki = LocalEpki {
-        encryption_algorithm: alg_id,
+    let epki = EncryptedPrivateKeyInfoOwned {
+        encryption_algorithm: pkcs5::EncryptionScheme::from(params),
         encrypted_data: OctetString::new(ciphertext.as_slice())?,
     };
     Ok(epki.to_der()?)
