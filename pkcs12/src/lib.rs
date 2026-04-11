@@ -20,6 +20,9 @@ pub mod pbe_params;
 pub mod pfx;
 pub mod safe_bag;
 
+#[cfg(feature = "builder")]
+pub mod builder;
+
 #[cfg(feature = "kdf")]
 pub mod kdf;
 

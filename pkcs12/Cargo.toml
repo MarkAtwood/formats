@@ -23,18 +23,24 @@ const-oid = { version = "0.10", features = ["db"], default-features = false }
 cms = { version = "=0.3.0-pre.2", default-features = false }
 
 # optional dependencies
-digest = { version = "0.11", features = ["alloc"], optional = true }
-zeroize = { version = "1.8.1", optional = true, default-features = false }
+digest    = { version = "0.11", features = ["alloc"], optional = true }
+hmac      = { version = "0.13", optional = true }
+pkcs5     = { version = "0.8.0-rc.13", features = ["pbes2", "alloc"], optional = true }
+rand_core = { version = "0.10", optional = true, default-features = false }
+sha2      = { version = "0.11", optional = true, default-features = false }
+zeroize   = { version = "1.8.1", optional = true, default-features = false }
 
 [dev-dependencies]
 hex-literal = "1"
 pkcs8 = { version = "0.11.0-rc.10", features = ["pkcs5"] }
 pkcs5 = { version = "0.8.0-rc.13", features = ["pbes2", "3des"] }
+rand = "0.10"
 sha2 = "0.11"
 whirlpool = "0.11"
 
 [features]
 default = ["pem"]
+builder = ["dep:hmac", "dep:pkcs5", "dep:rand_core", "dep:sha2", "kdf"]
 kdf = ["dep:digest", "zeroize/alloc"]
 pem = ["der/pem", "x509-cert/pem"]
 
