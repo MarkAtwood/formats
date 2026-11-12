@@ -10,7 +10,7 @@
 
 use der::{
     Decode, Encode,
-    asn1::{Any, ContextSpecific, OctetString},
+    asn1::{Any, OctetString},
 };
 use hex_literal::hex;
 use pkcs8::PrivateKeyInfoOwned;
@@ -62,14 +62,9 @@ fn find_shrouded_key(pfx_bytes: &[u8]) -> EncryptedPrivateKeyInfo {
             if bag.bag_id != PKCS_12_PKCS8_KEY_BAG_OID {
                 continue;
             }
-            // SafeBag.bagValue is `[0] EXPLICIT ANY` (RFC 7292 §4.2), so
-            // bag.bag_value carries the raw DER including the context-specific
-            // [0] tag.  ContextSpecific<T> strips that outer tag before
-            // decoding T; using EncryptedPrivateKeyInfo::from_der directly
-            // would fail because the leading byte is 0xa0, not a SEQUENCE tag.
-            let cs: ContextSpecific<EncryptedPrivateKeyInfo> =
-                ContextSpecific::from_der(&bag.bag_value).unwrap();
-            return cs.value;
+            // SafeBag decoding strips the `[0] EXPLICIT` tag, so bag_value
+            // holds the EncryptedPrivateKeyInfo itself.
+            return bag.bag_value.decode_as().unwrap();
         }
     }
     panic!("no pkcs8ShroudedKeyBag found in PFX");

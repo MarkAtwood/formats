@@ -187,7 +187,7 @@ fn decrypt_rc2(
 
     // Defensive: ciphertext must be non-empty and a multiple of the
     // RC2 block size (8 bytes).
-    if ciphertext.is_empty() || ciphertext.len() % RC2_BLOCK_SIZE != 0 {
+    if ciphertext.is_empty() || !ciphertext.len().is_multiple_of(RC2_BLOCK_SIZE) {
         return Err(der::ErrorKind::Failed.into());
     }
 
